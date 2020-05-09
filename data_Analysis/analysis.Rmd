@@ -1,0 +1,92 @@
+---
+title: "data-analysis"
+author: "Oliver Spohngellert"
+date: "11/23/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library("tidyverse")
+library("lubridate")
+library(tidytext)
+library(stringr)
+library(forcats)
+```
+
+```{r}
+
+data <- read_csv("../ArticleData2.csv")
+```
+
+```{r}
+head(data %>% mutate(month=month(article_date, label=TRUE)) %>% filter(political_lean != "centre") %>% group_by(month, political_lean) %>% unnest_tokens(word, article_headline) %>% filter(str_length(word) >= 16))
+```
+
+```{r}
+words_months <- data %>% mutate(month=month(article_date, label=TRUE)) %>% filter(political_lean != "centre") %>% group_by(month, political_lean) %>% unnest_tokens(word, article_headline) %>% anti_join(stop_words, by="word")
+unique(words_months$political_lean)
+
+```
+
+```{r}
+graph_data <- words_months %>% count(word, month, political_lean, sort=TRUE) %>%
+  top_n(10)
+graph_data
+graph_data %>% ggplot(aes(x=word, y=n, fill=political_lean)) + geom_col() + facet_wrap(~month, ncol=2, scales="free") + coord_flip() + scale_fill_manual(values=c("darkblue", "darkred"))
+```
+
+
+```{r}
+words_months_articles <- data %>% mutate(month=month(article_date, label=TRUE)) %>% filter(political_lean != "centre") %>% group_by(month, political_lean) %>% unnest_tokens(word, article_text) %>% anti_join(stop_words, by="word")
+
+```
+```{r}
+words_months_articles %>% filter(word == "containerid") %>% distinct(news_site)
+```
+
+```{r}
+graph_data <- words_months_articles %>% count(word, month, political_lean, sort=TRUE) %>%
+  top_n(10)
+graph_data %>% ggplot(aes(x=word, y=n, fill=political_lean)) + geom_col() + facet_wrap(~month, ncol=2, scales="free") + coord_flip() + scale_fill_manual(values=c("darkblue", "darkred"))
+```
+
+```{r}
+time_political_words_plot <- function(col, lean, color) {
+  
+  words_months_articles <- data %>% 
+    mutate(month=month(article_date, label=TRUE)) %>% 
+    filter(!!sym(col) == lean) %>% 
+    group_by(month, !!sym(col)) %>% 
+    unnest_tokens(word, article_text) %>% anti_join(stop_words, by="word")
+  
+  graph_data <- words_months_articles %>% 
+    count(word, month, political_lean, sort=TRUE) %>% top_n(10)
+  
+  graph_data %>% ggplot(aes(x=reorder(word, n), y=n, fill=political_lean)) + geom_col() + scale_x_discrete() + facet_wrap(~month, ncol=2, scales="free") + scale_fill_manual(values=c(color)) + ggtitle(paste("Top words used in articles by month where", str_replace(col, "_", " "), "is", lean)) + ylab("Number of uses in articles") + xlab("Word") + coord_flip()
+  ggsave(paste0("time_political_words_plot_", lean, ".jpg"))
+}
+
+
+for (args in list(c("political_lean", "left", "darkblue"), c("political_lean", "right", "darkred"), c("political_lean", "centre", "darkgreen"))) {
+  time_political_words_plot(args[1], args[2], args[3])
+}
+```
+
+```{r}
+tf_idf_scores_publication <- data %>% mutate(month=month(article_date, label=TRUE)) %>% unnest_tokens(word, article_headline) %>% anti_join(stop_words, by="word") %>% count(news_site, word, sort=TRUE) %>% filter(n > 10) %>% bind_tf_idf(word, news_site, n) %>% arrange(desc(tf_idf))
+head(tf_idf_scores_publication)
+```
+
+```{r}
+?top_n
+```
+
+```{r}
+tf_idf_scores_publication %>% group_by(news_site) %>% top_n(5, tf_idf) %>%
+  ggplot(aes(x=reorder(word, tf_idf), y=tf_idf)) + geom_col() + coord_flip() + facet_wrap(~news_site, ncol=2, scales='free')
+```
